@@ -1,0 +1,109 @@
+#Reading tables from the database
+
+import pyodbc
+import pandas as pd
+import seaborn as sns
+
+DB = {'servername': 'stwssbsql02', 'database': 'BAN5733'}
+conn = pyodbc.connect('DRIVER={SQL Server};SERVER=' + DB['servername'] + ';DATABASE=' + DB['database'] + ';Trusted_Connection=yes')
+
+df = pd.read_sql_query("SELECT * FROM Location_Adjustments", conn)
+df2 = pd.read_sql_query('SELECT * FROM Location_Planograms_Overview', conn)
+df3 = pd.read_sql_query('SELECT * FROM Planogram_Averages',conn)
+
+#Stripping whitespaces from column values in all the 3 tables
+df_obj = df.select_dtypes(['object'])
+df[df_obj.columns] = df_obj.apply(lambda x: x.str.strip())
+
+df2_obj = df2.select_dtypes(['object'])
+df2[df2_obj.columns] = df2_obj.apply(lambda x: x.str.strip())
+
+df3_obj = df3.select_dtypes(['object'])
+df3[df3_obj.columns] = df3_obj.apply(lambda x: x.str.strip())
+
+#Filter table 1 where 'Count_Difference' is not equal to 0
+
+change_df = df[df['Count_Difference'] != 0]
+
+change_df
+
+
+#Take user inputs for table 2 filters
+department_names = str(input("Enter Department Name: "))
+fixture_names = str(input("Enter Fixture Name: "))
+fixture_width = int(input("Enter fixture width:"))
+
+df2_change = df2[(df2['Department_Name'] == department_names) & (df2['Fixture_Name'] == fixture_names) & 
+                (df2['Fixture_Width(ft)'] == fixture_width)]
+
+store_code = str(input("Enter Store Code: "))
+df2_change1 = df2_change[df2_change['Store_Code'] == store_code]
+
+plan_names = df2_change1['Planogram_Name'].unique()
+
+
+# Print the plan names
+print("Plan Names:")
+for plan_name in plan_names:
+    print(plan_name)
+df3
+l = []
+for i in df2_change1['Segment_Name'].unique():
+    l.append(i)
+
+df3_change = df3[df3['Segment_Name'].isin(l)]
+df3_change1 = df3_change[df3_change['Planogram_Name'].isin(plan_names)]
+df3_change1.sort_values(by='Avg_Wly_Profit_Sales_Segment')
+
+
+#Calculating BOH cost per unit
+df2_change1['Boh_Cost'] = df2_change1['Boh_Cost'].str.replace('$', '')
+df2_change1['Boh_Cost'] = df2_change1['Boh_Cost'].str.replace(',', '')
+df2_change1['Boh_Cost']=df2_change1['Boh_Cost'].astype(float)
+df2_change1['BOH']=df2['BOH'].astype(float)
+ 
+df2_change1['BOH_Per_Unit']=df2_change1['Boh_Cost']/df2_change1['BOH']
+
+#Merging tables 2 & 3
+final_df = pd.merge(df3_change1, df2_change1[['Planogram_Name','Department_Name','Planogram_Width(ft)','BOH','Boh_Cost','Fixture_Name','Fixture_Width(ft)','Fixture_Store_Location']], how='left', 
+                    left_on='Planogram_Name', right_on='Planogram_Name')
+
+#Sample Graphs Showing profits
+#Bar graphs showing profits for different planograms from [unique department, store code, fixture Name]
+ax=sns.barplot(data=df3_change1.sort_values(by="Avg_Wly_Profit_Sales_Segment"),x='Avg_Wly_Profit_Sales_Segment',y='Planogram_Name')
+for i in ax.containers:
+    ax.bar_label(i,)
+
+
+new_df = pd.merge(df3_change1[['Planogram_Name']], final_df[['Planogram_Name','Planogram_Width(ft)','Avg_Wly_Profit_Sales_Segment']], how='left', 
+                    left_on='Planogram_Name', right_on='Planogram_Name')
+new_df.sort_values(by='Avg_Wly_Profit_Sales_Segment')
+
+
+new_df['New_Space'] = new_df['Planogram_Width(ft)']
+new_df
+new_df['Diff_profit'] = new_df['Avg_Wly_Profit_Sales_Segment']
+
+new_df.loc[new_df['Planogram_Name'].str.contains('MS - Purses and Wallets with FGX Sunglasses - 3ft - Wooden Rack', case=False, na=False), 'New_Space'] = 0
+new_df.loc[new_df['Planogram_Name'].str.contains('MS - Purses and Wallets with FGX Sunglasses - 3ft - Wooden Rack', case=False, na=False), 'Diff_profit'] = 0
+
+new_df.sort_values(by='Avg_Wly_Profit_Sales_Segment')
+new_df.to_csv(r'C:\Users\anume\OneDrive\Documents\Python Scripts\1st.csv')
+
+
+new_df3 = pd.merge(df3_change1[['Planogram_Name']], final_df[['Planogram_Name','Planogram_Width(ft)','Avg_Wly_Profit_Sales_Segment']], how='left', 
+                    left_on='Planogram_Name', right_on='Planogram_Name')
+new_df3.sort_values(by='Avg_Wly_Profit_Sales_Segment')
+new_df3['New_Space'] = new_df3['Planogram_Width(ft)']
+new_df3
+new_df3['Diff_profit'] = new_df3['Avg_Wly_Profit_Sales_Segment']
+
+keywords = ['DAS - Pokemon - 1ft 6in - Wing',
+'Action Imports - Purse Accessories - 1ft 6in - Panel - Left']
+pattern = '|'.join(keywords)
+
+
+new_df3.loc[new_df3['Planogram_Name'].str.contains(pattern, case=False, na=False), 'New_Space'] = 0
+new_df3.loc[new_df3['Planogram_Name'].str.contains(pattern, case=False, na=False), 'Diff_profit'] = 0
+
+new_df3.sort_values(by='Avg_Wly_Profit_Sales_Segment')
